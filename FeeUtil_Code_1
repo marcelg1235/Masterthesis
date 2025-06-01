@@ -1,0 +1,36 @@
+package com.avento.shop.backend.util;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public class FeeUtil implements IFeeUtil {
+
+	@Override
+	public Fee calculateShipAndArticleFeePerUnit(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+
+		final Fee resultFees = new Fee();
+		final BigDecimal priceSum = priceShip.add(priceArticle);
+
+		if (priceSum.compareTo(BigDecimal.ZERO) < 0) {
+			throw new RuntimeException("PriceSum [" + priceSum + "] is lower than 0!");
+		}
+		if (priceSum.compareTo(BigDecimal.ZERO) == 0) {
+			//Calculation would result in divide by zero errors, so just set to zero and return.
+			resultFees.setShipFee(BigDecimal.ZERO);
+			resultFees.setArticleFee(BigDecimal.ZERO);
+		} else {
+			//Normal calculation
+			final BigDecimal factorToShip = priceShip.divide(priceSum, 5, RoundingMode.HALF_UP);
+			final BigDecimal shipFee = feeTotal.multiply(factorToShip);
+			final BigDecimal articleFee = feeTotal.subtract(shipFee);
+
+			final BigDecimal shipFeePerItem = shipFee.divide(quantity, 2, RoundingMode.HALF_UP);
+			final BigDecimal articleFeePerItem = articleFee.divide(quantity, 2, RoundingMode.HALF_UP);
+
+			resultFees.setShipFee(shipFeePerItem);
+			resultFees.setArticleFee(articleFeePerItem);
+		}
+
+		return resultFees;
+	}
+}
