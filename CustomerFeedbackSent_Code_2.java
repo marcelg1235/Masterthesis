@@ -1,0 +1,75 @@
+package com.avento.shop.backend.mail;
+
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Map;
+
+import com.avento.shop.core.util.IModelGenerator;
+import com.avento.shop.db.domain.RowOrder;
+import com.avento.shop.db.domain.RowOrderPosition;
+import com.avento.shop.db.domain.RowOrderPositionType;
+
+public class CustomerFeedbackSent implements IModelGenerator {
+
+	@Override
+	public Map<String, Object> generateModel(Map<String, Object> parameters) {
+		final RowOrder rowOrder = (RowOrder) parameters.get("customerFeedback");
+		if (rowOrder == null)
+			throw new IllegalArgumentException("customerFeedback is missing");
+
+		final Map<String, Object> map = new HashMap<>();
+		final CustomerFeedbackSentModel customerInfo = new CustomerFeedbackSentModel();
+		customerInfo.setFirstName(rowOrder.getRowDeliveryAddress().getFirstname());
+		customerInfo.setLastName(rowOrder.getRowDeliveryAddress().getLastname());
+		customerInfo.setAddress1(rowOrder.getRowDeliveryAddress().getAddress1());
+		customerInfo.setAddress2(rowOrder.getRowDeliveryAddress().getAddress2());
+		customerInfo.setAddress3(rowOrder.getRowDeliveryAddress().getAddress3());
+		customerInfo.setZip(rowOrder.getRowDeliveryAddress().getZip());
+		customerInfo.setCity(rowOrder.getRowDeliveryAddress().getCity());
+		customerInfo.setState(rowOrder.getRowDeliveryAddress().getState());
+		customerInfo.setCountryName(rowOrder.getRowDeliveryAddress().getRowCountry().getName());
+		customerInfo.setCompany(rowOrder.getRowDeliveryAddress().getCompany());
+		customerInfo.setOrderId(rowOrder.getId());
+		customerInfo.setPlatformOrderId(rowOrder.getPlatformOrderId());
+		customerInfo.setOrderDate(rowOrder.getOrderDate());
+		customerInfo.setOip(new LinkedList<>());
+		customerInfo.setTotalCosts(new BigDecimal(0));
+		customerInfo.setShippingCosts(new BigDecimal(0));
+		customerInfo.setPlatformAccountName(rowOrder.getRowPlatformAccount().getAccountname());
+
+		for (final RowOrderPosition rowOrderPosition : rowOrder.getRowsOrderPosition()) {
+			if (RowOrderPositionType.ARTICLE.equals(rowOrderPosition.getRowOrderPositionType())) {
+				final CustomerFeedbackSentModel.Position customerInfoPosition = new CustomerFeedbackSentModel.Position();
+				customerInfoPosition.setSinglePrice(rowOrderPosition.getPriceGross());
+				customerInfoPosition.setTotalPerItemPrice(rowOrderPosition.getPriceGross());
+				customerInfoPosition.setQuantity(new BigDecimal(1));
+				customerInfoPosition.setName(rowOrderPosition.getName());
+				customerInfoPosition.setGtin13(rowOrderPosition.getGtin13());
+
+				boolean found = false;
+				for (final CustomerFeedbackSentModel.Position oip : customerInfo.getOip()) {
+					if (oip.getGtin13().equals(rowOrderPosition.getGtin13())) {
+						oip.setQuantity(oip.getQuantity().add(new BigDecimal(1)));
+						oip.setTotalPerItemPrice(oip.getSinglePrice().multiply(oip.getQuantity()));
+						customerInfo.setTotalCosts(customerInfo.getTotalCosts().add(oip.getSinglePrice()));
+						found = true;
+					}
+				}
+
+				if (!found) {
+					customerInfo.setTotalCosts(customerInfo.getTotalCosts().add(customerInfoPosition.getSinglePrice()));
+					customerInfo.getOip().add(customerInfoPosition);
+				}
+			} else if (RowOrderPositionType.SHIPPING.equals(rowOrderPosition.getRowOrderPositionType())) {
+				customerInfo.setShippingCosts(customerInfo.getShippingCosts().add(rowOrderPosition.getPriceGross()));
+			}
+		}
+
+		map.put("customerFeedback", customerInfo);
+		map.put("platformAccountId", rowOrder.getRowPlatformAccount().getId());
+		map.put("resellerId", rowOrder.getRowPlatformAccount().getRowReseller().getId());
+
+		return map;
+	}
+}
