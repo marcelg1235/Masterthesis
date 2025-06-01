@@ -1,0 +1,46 @@
+package com.avento.shop.backend.util;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public class FeeUtil implements IFeeUtil {
+
+	@Override
+	public Fee calculateShipAndArticleFeePerUnit(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+		final Fee resultFees = new Fee();
+		final BigDecimal priceSum = priceShip.add(priceArticle);
+
+		validatePriceSum(priceSum);
+
+		if (priceSum.compareTo(BigDecimal.ZERO) == 0) {
+			setZeroFees(resultFees);
+		} else {
+			calculateAndSetFees(priceShip, priceSum, feeTotal, quantity, resultFees);
+		}
+
+		return resultFees;
+	}
+
+	private void validatePriceSum(BigDecimal priceSum) {
+		if (priceSum.compareTo(BigDecimal.ZERO) < 0) {
+			throw new RuntimeException("PriceSum [" + priceSum + "] is lower than 0!");
+		}
+	}
+
+	private void setZeroFees(Fee resultFees) {
+		resultFees.setShipFee(BigDecimal.ZERO);
+		resultFees.setArticleFee(BigDecimal.ZERO);
+	}
+
+	private void calculateAndSetFees(BigDecimal priceShip, BigDecimal priceSum, BigDecimal feeTotal, BigDecimal quantity, Fee resultFees) {
+		final BigDecimal factorToShip = priceShip.divide(priceSum, 5, RoundingMode.HALF_UP);
+		final BigDecimal shipFee = feeTotal.multiply(factorToShip);
+		final BigDecimal articleFee = feeTotal.subtract(shipFee);
+
+		final BigDecimal shipFeePerItem = shipFee.divide(quantity, 2, RoundingMode.HALF_UP);
+		final BigDecimal articleFeePerItem = articleFee.divide(quantity, 2, RoundingMode.HALF_UP);
+
+		resultFees.setShipFee(shipFeePerItem);
+		resultFees.setArticleFee(articleFeePerItem);
+	}
+}
