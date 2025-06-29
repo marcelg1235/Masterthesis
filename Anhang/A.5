@@ -1,0 +1,202 @@
+### Question:
+Mach mir ein Refactoring für die Klasse FeeUtil.
+
+### Answer:
+Okay, hier sind ein paar Refactoring-Ideen für die `FeeUtil`-Klasse, zusammen mit Begründungen und Code-Beispielen:
+
+**1. Validierung der Eingabeparameter:**
+
+*   **Problem:** Die aktuelle Implementierung validiert nur `priceSum`. Es ist ratsam, auch `priceShip`, `priceArticle`, `feeTotal` und `quantity` zu validieren, um unerwartete Ergebnisse oder Fehler zu vermeiden. Zum Beispiel sollte `quantity` nicht Null oder negativ sein. `feeTotal` sollte auch nicht negativ sein.
+*   **Lösung:** Füge Validierungen für die anderen Eingabeparameter hinzu.
+*   **Vorteile:** Erhöht die Robustheit und verhindert Fehler aufgrund ungültiger Eingaben.
+
+**File: /Users/marcelgaiser/IdeaProjects/avento/backend/ShopBackend/src/com/avento/shop/backend/util/FeeUtil.java**
+```java
+package com.avento.shop.backend.util;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public class FeeUtil implements IFeeUtil {
+
+	@Override
+	public Fee calculateShipAndArticleFeePerUnit(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+
+		if (priceShip == null || priceArticle == null || feeTotal == null || quantity == null) {
+			throw new IllegalArgumentException("Input parameters cannot be null.");
+		}
+
+		if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+			throw new IllegalArgumentException("Quantity must be greater than zero.");
+		}
+
+		if (feeTotal.compareTo(BigDecimal.ZERO) < 0) {
+			throw new IllegalArgumentException("feeTotal must be non-negative.");
+		}
+
+		final Fee resultFees = new Fee();
+		final BigDecimal priceSum = priceShip.add(priceArticle);
+
+		if (priceSum.compareTo(BigDecimal.ZERO) < 0) {
+			throw new IllegalArgumentException("PriceSum [" + priceSum + "] is lower than 0!");
+		}
+		if (priceSum.compareTo(BigDecimal.ZERO) == 0) {
+			//Calculation would result in divide by zero errors, so just set to zero and return.
+			resultFees.setShipFee(BigDecimal.ZERO);
+			resultFees.setArticleFee(BigDecimal.ZERO);
+		} else {
+			//Normal calculation
+			final BigDecimal factorToShip = priceShip.divide(priceSum, 5, RoundingMode.HALF_UP);
+			final BigDecimal shipFee = feeTotal.multiply(factorToShip);
+			final BigDecimal articleFee = feeTotal.subtract(shipFee);
+
+			final BigDecimal shipFeePerItem = shipFee.divide(quantity, 2, RoundingMode.HALF_UP);
+			final BigDecimal articleFeePerItem = articleFee.divide(quantity, 2, RoundingMode.HALF_UP);
+
+			resultFees.setShipFee(shipFeePerItem);
+			resultFees.setArticleFee(articleFeePerItem);
+		}
+
+		return resultFees;
+	}
+}
+```
+
+**2. Konstanten für Rounding Mode und Scale:**
+
+*   **Problem:** Die magischen Zahlen `5` und `2` für die Skalierung und `RoundingMode.HALF_UP` sind schwer zu verstehen und zu warten.
+*   **Lösung:** Definiere Konstanten für diese Werte.
+*   **Vorteile:** Erhöht die Lesbarkeit und Wartbarkeit. Änderungen an der Skalierung oder dem Rundungsmodus können an einer einzigen Stelle vorgenommen werden.
+
+**File: /Users/marcelgaiser/IdeaProjects/avento/backend/ShopBackend/src/com/avento/shop/backend/util/FeeUtil.java**
+```java
+package com.avento.shop.backend.util;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public class FeeUtil implements IFeeUtil {
+
+	private static final int PRICE_SCALE = 5;
+	private static final int FEE_SCALE = 2;
+	private static final RoundingMode ROUNDING_MODE = RoundingMode.HALF_UP;
+
+	@Override
+	public Fee calculateShipAndArticleFeePerUnit(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+
+		if (priceShip == null || priceArticle == null || feeTotal == null || quantity == null) {
+			throw new IllegalArgumentException("Input parameters cannot be null.");
+		}
+
+		if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+			throw new IllegalArgumentException("Quantity must be greater than zero.");
+		}
+
+		if (feeTotal.compareTo(BigDecimal.ZERO) < 0) {
+			throw new IllegalArgumentException("feeTotal must be non-negative.");
+		}
+
+		final Fee resultFees = new Fee();
+		final BigDecimal priceSum = priceShip.add(priceArticle);
+
+		if (priceSum.compareTo(BigDecimal.ZERO) < 0) {
+			throw new IllegalArgumentException("PriceSum [" + priceSum + "] is lower than 0!");
+		}
+		if (priceSum.compareTo(BigDecimal.ZERO) == 0) {
+			//Calculation would result in divide by zero errors, so just set to zero and return.
+			resultFees.setShipFee(BigDecimal.ZERO);
+			resultFees.setArticleFee(BigDecimal.ZERO);
+		} else {
+			//Normal calculation
+			final BigDecimal factorToShip = priceShip.divide(priceSum, PRICE_SCALE, ROUNDING_MODE);
+			final BigDecimal shipFee = feeTotal.multiply(factorToShip);
+			final BigDecimal articleFee = feeTotal.subtract(shipFee);
+
+			final BigDecimal shipFeePerItem = shipFee.divide(quantity, FEE_SCALE, ROUNDING_MODE);
+			final BigDecimal articleFeePerItem = articleFee.divide(quantity, FEE_SCALE, ROUNDING_MODE);
+
+			resultFees.setShipFee(shipFeePerItem);
+			resultFees.setArticleFee(articleFeePerItem);
+		}
+
+		return resultFees;
+	}
+}
+```
+
+**3. Hilfsmethode für die Berechnung der Gebühren pro Artikel:**
+
+*   **Problem:** Die Berechnung der Gebühren pro Artikel wird zweimal durchgeführt.
+*   **Lösung:** Extrahiere diese Logik in eine separate Hilfsmethode.
+*   **Vorteile:** Reduziert Codeduplikation und verbessert die Lesbarkeit.
+
+**File: /Users/marcelgaiser/IdeaProjects/avento/backend/ShopBackend/src/com/avento/shop/backend/util/FeeUtil.java**
+```java
+package com.avento.shop.backend.util;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public class FeeUtil implements IFeeUtil {
+
+	private static final int PRICE_SCALE = 5;
+	private static final int FEE_SCALE = 2;
+	private static final RoundingMode ROUNDING_MODE = RoundingMode.HALF_UP;
+
+	@Override
+	public Fee calculateShipAndArticleFeePerUnit(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+
+		if (priceShip == null || priceArticle == null || feeTotal == null || quantity == null) {
+			throw new IllegalArgumentException("Input parameters cannot be null.");
+		}
+
+		if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+			throw new IllegalArgumentException("Quantity must be greater than zero.");
+		}
+
+		if (feeTotal.compareTo(BigDecimal.ZERO) < 0) {
+			throw new IllegalArgumentException("feeTotal must be non-negative.");
+		}
+
+		final Fee resultFees = new Fee();
+		final BigDecimal priceSum = priceShip.add(priceArticle);
+
+		if (priceSum.compareTo(BigDecimal.ZERO) < 0) {
+			throw new IllegalArgumentException("PriceSum [" + priceSum + "] is lower than 0!");
+		}
+		if (priceSum.compareTo(BigDecimal.ZERO) == 0) {
+			//Calculation would result in divide by zero errors, so just set to zero and return.
+			resultFees.setShipFee(BigDecimal.ZERO);
+			resultFees.setArticleFee(BigDecimal.ZERO);
+		} else {
+			//Normal calculation
+			final BigDecimal factorToShip = priceShip.divide(priceSum, PRICE_SCALE, ROUNDING_MODE);
+			final BigDecimal shipFee = feeTotal.multiply(factorToShip);
+			final BigDecimal articleFee = feeTotal.subtract(shipFee);
+
+			resultFees.setShipFee(calculateFeePerItem(shipFee, quantity));
+			resultFees.setArticleFee(calculateFeePerItem(articleFee, quantity));
+		}
+
+		return resultFees;
+	}
+
+	private BigDecimal calculateFeePerItem(BigDecimal fee, BigDecimal quantity) {
+		return fee.divide(quantity, FEE_SCALE, ROUNDING_MODE);
+	}
+}
+```
+
+**4. Exception Handling:**
+
+*   **Problem:** Die aktuelle Exception-Behandlung ist sehr allgemein gehalten (`RuntimeException`).
+*   **Lösung:** Verwende spezifischere Exceptions, z.B. `IllegalArgumentException` für ungültige Eingaben.
+*   **Vorteile:** Hilft bei der Fehlerbehebung und macht den Code verständlicher.  (Bereits in Punkt 1 umgesetzt)
+
+**5. Kommentare:**
+
+*   **Problem:** Der Code ist zwar relativ einfach, aber einige Kommentare könnten hilfreich sein, um die Logik zu erklären.
+*   **Lösung:** Füge Kommentare hinzu, um den Zweck der einzelnen Abschnitte zu erläutern.
+*   **Vorteile:** Erhöht die Lesbarkeit und das Verständnis des Codes.
+
+Dies sind nur einige Vorschläge. Je nach den spezifischen Anforderungen und dem Kontext Ihres Projekts können weitere Refactorings sinnvoll sein.  Wichtig ist, dass die Änderungen den Code lesbarer, wartbarer und robuster machen.
