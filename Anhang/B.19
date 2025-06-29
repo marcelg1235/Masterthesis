@@ -1,0 +1,56 @@
+package com.avento.shop.backend.mail;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.avento.shop.core.log.ILogger;
+import com.avento.shop.core.log.LogAdapter;
+import com.avento.shop.core.util.IModelGenerator;
+import com.avento.shop.db.domain.RowOrder;
+import com.avento.shop.db.domain.RowOrderPosition;
+import com.avento.shop.db.domain.RowTradeItem;
+
+public class OrderSent implements IModelGenerator {
+
+    protected static ILogger logger = new LogAdapter(OrderSent.class);
+
+    @Override
+    public Map<String, Object> generateModel(Map<String, Object> parameters) {
+       final RowOrder order = (RowOrder) parameters.get("order");
+       @SuppressWarnings("unchecked")
+       final List<RowTradeItem> tradeItems = (List<RowTradeItem>) parameters.get("tradeItems");
+
+       if (order == null || tradeItems == null || tradeItems.isEmpty()) {
+          throw new IllegalArgumentException("Order or trade items are missing or empty.");
+       }
+
+       final Map<String, Object> model = new HashMap<>();
+       final List<PositionSentModel> positions = new ArrayList<>(tradeItems.size());
+
+       // Initialize order model with data from the first trade item
+       RowOrderPosition firstOrderPosition = tradeItems.get(0).getRowOrderPosition();
+       PositionSentModel orderModel = new PositionSentModel();
+       orderModel.fill(firstOrderPosition);
+
+       for (RowTradeItem tradeItem : tradeItems) {
+          RowOrderPosition rowOrderPosition = tradeItem.getRowOrderPosition();
+          PositionSentModel position = new PositionSentModel();
+
+          position.setQuantity(1);
+          position.setGtin13(rowOrderPosition.getGtin13());
+          position.setSinglePrice(rowOrderPosition.getPriceGross());
+          position.setName(rowOrderPosition.getName());
+
+          positions.add(position);
+       }
+
+       model.put("order", orderModel);
+       model.put("positions", positions);
+       model.put("platformAccountId", order.getRowPlatformAccount().getId());
+       model.put("resellerId", order.getRowPlatformAccount().getRowReseller().getId());
+
+       return model;
+    }
+}
