@@ -1,0 +1,131 @@
+package com.avento.shop.backend.mail;
+
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import com.avento.shop.core.util.IModelGenerator;
+import com.avento.shop.db.domain.RowOrder;
+import com.avento.shop.db.domain.RowOrderPosition;
+import com.avento.shop.db.domain.RowOrderPositionType;
+
+public class CustomerFeedbackSent implements IModelGenerator {
+
+    private static final String CUSTOMER_FEEDBACK_PARAM = "customerFeedback";
+    private static final BigDecimal ONE = new BigDecimal(1);
+    private static final BigDecimal ZERO = new BigDecimal(0);
+
+    @Override
+    public Map<String, Object> generateModel(Map<String, Object> parameters) {
+       final RowOrder rowOrder = validateAndGetRowOrder(parameters);
+
+       final Map<String, Object> resultMap = new HashMap<>();
+       final CustomerFeedbackSentModel customerInfo = createCustomerInfoModel(rowOrder);
+
+       processOrderPositions(rowOrder, customerInfo);
+
+       resultMap.put(CUSTOMER_FEEDBACK_PARAM, customerInfo);
+       resultMap.put("platformAccountId", rowOrder.getRowPlatformAccount().getId());
+       resultMap.put("resellerId", rowOrder.getRowPlatformAccount().getRowReseller().getId());
+
+       return resultMap;
+    }
+
+    private RowOrder validateAndGetRowOrder(Map<String, Object> parameters) {
+       final RowOrder rowOrder = (RowOrder) parameters.get(CUSTOMER_FEEDBACK_PARAM);
+       if (rowOrder == null) {
+          throw new IllegalArgumentException(CUSTOMER_FEEDBACK_PARAM + " is missing");
+       }
+       return rowOrder;
+    }
+
+    private CustomerFeedbackSentModel createCustomerInfoModel(RowOrder rowOrder) {
+       final CustomerFeedbackSentModel customerInfo = new CustomerFeedbackSentModel();
+
+       // Set delivery address information
+       customerInfo.setFirstName(rowOrder.getRowDeliveryAddress().getFirstname());
+       customerInfo.setLastName(rowOrder.getRowDeliveryAddress().getLastname());
+       customerInfo.setAddress1(rowOrder.getRowDeliveryAddress().getAddress1());
+       customerInfo.setAddress2(rowOrder.getRowDeliveryAddress().getAddress2());
+       customerInfo.setAddress3(rowOrder.getRowDeliveryAddress().getAddress3());
+       customerInfo.setZip(rowOrder.getRowDeliveryAddress().getZip());
+       customerInfo.setCity(rowOrder.getRowDeliveryAddress().getCity());
+       customerInfo.setState(rowOrder.getRowDeliveryAddress().getState());
+       customerInfo.setCountryName(rowOrder.getRowDeliveryAddress().getRowCountry().getName());
+       customerInfo.setCompany(rowOrder.getRowDeliveryAddress().getCompany());
+
+       // Set order information
+       customerInfo.setOrderId(rowOrder.getId());
+       customerInfo.setPlatformOrderId(rowOrder.getPlatformOrderId());
+       customerInfo.setOrderDate(rowOrder.getOrderDate());
+       customerInfo.setPlatformAccountName(rowOrder.getRowPlatformAccount().getAccountname());
+
+       // Initialize collections and totals
+       customerInfo.setOip(new LinkedList<>());
+       customerInfo.setTotalCosts(ZERO);
+       customerInfo.setShippingCosts(ZERO);
+
+       return customerInfo;
+    }
+
+    private void processOrderPositions(RowOrder rowOrder, CustomerFeedbackSentModel customerInfo) {
+       List<RowOrderPosition> articlePositions = filterPositionsByType(rowOrder, RowOrderPositionType.ARTICLE);
+       List<RowOrderPosition> shippingPositions = filterPositionsByType(rowOrder, RowOrderPositionType.SHIPPING);
+
+       processArticlePositions(articlePositions, customerInfo);
+       processShippingPositions(shippingPositions, customerInfo);
+    }
+
+    private List<RowOrderPosition> filterPositionsByType(RowOrder rowOrder, RowOrderPositionType type) {
+       return rowOrder.getRowsOrderPosition().stream()
+             .filter(pos -> type.equals(pos.getRowOrderPositionType()))
+             .collect(Collectors.toList());
+    }
+
+    private void processArticlePositions(List<RowOrderPosition> articlePositions, CustomerFeedbackSentModel customerInfo) {
+       for (final RowOrderPosition position : articlePositions) {
+          processArticlePosition(position, customerInfo);
+       }
+    }
+
+    private void processArticlePosition(RowOrderPosition position, CustomerFeedbackSentModel customerInfo) {
+       // Check if this article is already in the list
+       boolean found = false;
+       for (final CustomerFeedbackSentModel.Position existingPosition : customerInfo.getOip()) {
+          if (existingPosition.getGtin13().equals(position.getGtin13())) {
+             // Update existing position
+             existingPosition.setQuantity(existingPosition.getQuantity().add(ONE));
+             existingPosition.setTotalPerItemPrice(existingPosition.getSinglePrice().multiply(existingPosition.getQuantity()));
+             customerInfo.setTotalCosts(customerInfo.getTotalCosts().add(existingPosition.getSinglePrice()));
+             found = true;
+             break;
+          }
+       }
+
+       if (!found) {
+          // Create new position
+          final CustomerFeedbackSentModel.Position newPosition = createPositionFromOrderPosition(position);
+          customerInfo.setTotalCosts(customerInfo.getTotalCosts().add(newPosition.getSinglePrice()));
+          customerInfo.getOip().add(newPosition);
+       }
+    }
+
+    private CustomerFeedbackSentModel.Position createPositionFromOrderPosition(RowOrderPosition position) {
+       final CustomerFeedbackSentModel.Position customerInfoPosition = new CustomerFeedbackSentModel.Position();
+       customerInfoPosition.setSinglePrice(position.getPriceGross());
+       customerInfoPosition.setTotalPerItemPrice(position.getPriceGross());
+       customerInfoPosition.setQuantity(ONE);
+       customerInfoPosition.setName(position.getName());
+       customerInfoPosition.setGtin13(position.getGtin13());
+       return customerInfoPosition;
+    }
+
+    private void processShippingPositions(List<RowOrderPosition> shippingPositions, CustomerFeedbackSentModel customerInfo) {
+       for (final RowOrderPosition position : shippingPositions) {
+          customerInfo.setShippingCosts(customerInfo.getShippingCosts().add(position.getPriceGross()));
+       }
+    }
+}
