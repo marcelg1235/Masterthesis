@@ -1,0 +1,74 @@
+package com.avento.shop.backend.reader;
+
+import com.avento.shop.backend.loader.IReader;
+import com.avento.shop.core.ExceptionUtils;
+import com.avento.shop.core.io.BlockingQueueAdapter;
+import com.avento.shop.core.io.IQueue;
+import org.springframework.core.io.Resource;
+
+import java.io.InputStream;
+
+public class XMLReader implements IStreamReader {
+
+    private final IQueue queue;
+    private Resource file;
+    private IReader reader;
+
+    public XMLReader(IQueue queue) {
+       this.queue = queue;
+    }
+
+    public XMLReader() {
+       this(new BlockingQueueAdapter());
+    }
+
+    @Override
+    public String[] nextRecord() {
+       if (file == null) {
+          throw new IllegalStateException("File resource must be set before reading.");
+       }
+       if (reader == null) {
+          throw new IllegalStateException("Reader must be set before reading.");
+       }
+
+       return ExceptionUtils.runSafe(() -> {
+          // Start the reader thread if it's not already running
+          if (reader.getQueue() == null) {
+             startReaderThread();
+          }
+
+          final Object result = queue.poll();
+          if (result instanceof Throwable) {
+             ExceptionUtils.throwException((Throwable) result);
+          }
+
+          return (String[]) result;
+       });
+    }
+
+    private void startReaderThread() {
+       try (InputStream inputStream = file.getInputStream()) {
+          reader.setInputStream(inputStream);
+          reader.setQueue(queue);
+          Thread thread = new Thread(reader);
+          thread.setDaemon(true);
+          thread.start();
+       } catch (Exception e) {
+          throw new IllegalStateException("Failed to start reader thread", e);
+       }
+    }
+
+    public IReader getReader() {
+       return reader;
+    }
+
+    public void setReader(IReader reader) {
+       this.reader = reader;
+    }
+
+    @Override
+    public void setFile(Resource file) {
+       this.file = file;
+       // Reset the queue when a new file is set
+    }
+}
