@@ -1,0 +1,114 @@
+### Question:
+Bitte führe ein umfassendes Refactoring durch mit dem Ziel, die Lesbarkeit, Wartbarkeit, Effizienz und Genauigkeit zu verbessern.
+
+### Answer:
+**File: /Users/marcelgaiser/IdeaProjects/avento/backend/ShopBackend/src/com/avento/shop/backend/mail/CustomerFeedbackSent.java**
+```java
+package com.avento.shop.backend.mail;
+
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
+import com.avento.shop.core.util.IModelGenerator;
+import com.avento.shop.db.domain.RowOrder;
+import com.avento.shop.db.domain.RowOrderPosition;
+import com.avento.shop.db.domain.RowOrderPositionType;
+
+public class CustomerFeedbackSent implements IModelGenerator {
+
+    @Override
+    public Map<String, Object> generateModel(Map<String, Object> parameters) {
+        final RowOrder rowOrder = getRowOrder(parameters);
+        final CustomerFeedbackSentModel customerInfo = createCustomerFeedbackModel(rowOrder);
+        final Map<String, Object> map = new HashMap<>();
+        
+        map.put("customerFeedback", customerInfo);
+        map.put("platformAccountId", rowOrder.getRowPlatformAccount().getId());
+        map.put("resellerId", rowOrder.getRowPlatformAccount().getRowReseller().getId());
+
+        return map;
+    }
+
+    private RowOrder getRowOrder(Map<String, Object> parameters) {
+        final RowOrder rowOrder = (RowOrder) parameters.get("customerFeedback");
+        if (rowOrder == null) {
+            throw new IllegalArgumentException("customerFeedback is missing");
+        }
+        return rowOrder;
+    }
+
+    private CustomerFeedbackSentModel createCustomerFeedbackModel(RowOrder rowOrder) {
+        final CustomerFeedbackSentModel customerInfo = new CustomerFeedbackSentModel();
+        populateCustomerInfo(customerInfo, rowOrder);
+        calculateOrderPositions(customerInfo, rowOrder.getRowsOrderPosition());
+        return customerInfo;
+    }
+
+    private void populateCustomerInfo(CustomerFeedbackSentModel customerInfo, RowOrder rowOrder) {
+        customerInfo.setFirstName(rowOrder.getRowDeliveryAddress().getFirstname());
+        customerInfo.setLastName(rowOrder.getRowDeliveryAddress().getLastname());
+        customerInfo.setAddress1(rowOrder.getRowDeliveryAddress().getAddress1());
+        customerInfo.setAddress2(rowOrder.getRowDeliveryAddress().getAddress2());
+        customerInfo.setAddress3(rowOrder.getRowDeliveryAddress().getAddress3());
+        customerInfo.setZip(rowOrder.getRowDeliveryAddress().getZip());
+        customerInfo.setCity(rowOrder.getRowDeliveryAddress().getCity());
+        customerInfo.setState(rowOrder.getRowDeliveryAddress().getState());
+        customerInfo.setCountryName(rowOrder.getRowDeliveryAddress().getRowCountry().getName());
+        customerInfo.setCompany(rowOrder.getRowDeliveryAddress().getCompany());
+        customerInfo.setOrderId(rowOrder.getId());
+        customerInfo.setPlatformOrderId(rowOrder.getPlatformOrderId());
+        customerInfo.setOrderDate(rowOrder.getOrderDate());
+        customerInfo.setOip(new LinkedList<>());
+        customerInfo.setTotalCosts(BigDecimal.ZERO);
+        customerInfo.setShippingCosts(BigDecimal.ZERO);
+        customerInfo.setPlatformAccountName(rowOrder.getRowPlatformAccount().getAccountname());
+    }
+
+    private void calculateOrderPositions(CustomerFeedbackSentModel customerInfo, List<RowOrderPosition> orderPositions) {
+        for (final RowOrderPosition rowOrderPosition : orderPositions) {
+            if (RowOrderPositionType.ARTICLE.equals(rowOrderPosition.getRowOrderPositionType())) {
+                processArticlePosition(customerInfo, rowOrderPosition);
+            } else if (RowOrderPositionType.SHIPPING.equals(rowOrderPosition.getRowOrderPositionType())) {
+                customerInfo.setShippingCosts(customerInfo.getShippingCosts().add(rowOrderPosition.getPriceGross()));
+            }
+        }
+    }
+
+    private void processArticlePosition(CustomerFeedbackSentModel customerInfo, RowOrderPosition rowOrderPosition) {
+        final CustomerFeedbackSentModel.Position customerInfoPosition = new CustomerFeedbackSentModel.Position();
+        customerInfoPosition.setSinglePrice(rowOrderPosition.getPriceGross());
+        customerInfoPosition.setTotalPerItemPrice(rowOrderPosition.getPriceGross());
+        customerInfoPosition.setQuantity(BigDecimal.ONE);
+        customerInfoPosition.setName(rowOrderPosition.getName());
+        customerInfoPosition.setGtin13(rowOrderPosition.getGtin13());
+
+        boolean found = false;
+        for (final CustomerFeedbackSentModel.Position oip : customerInfo.getOip()) {
+            if (oip.getGtin13().equals(rowOrderPosition.getGtin13())) {
+                oip.setQuantity(oip.getQuantity().add(BigDecimal.ONE));
+                oip.setTotalPerItemPrice(oip.getSinglePrice().multiply(oip.getQuantity()));
+                customerInfo.setTotalCosts(customerInfo.getTotalCosts().add(oip.getSinglePrice()));
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            customerInfo.setTotalCosts(customerInfo.getTotalCosts().add(customerInfoPosition.getSinglePrice()));
+            customerInfo.getOip().add(customerInfoPosition);
+        }
+    }
+}
+```
+
+### Refactoring Summary:
+1. **Method Extraction**: Extracted methods to handle specific tasks, such as `getRowOrder`, `createCustomerFeedbackModel`, `populateCustomerInfo`, `calculateOrderPositions`, and `processArticlePosition`. This improves readability and maintainability by breaking down the logic into smaller, more focused methods.
+   
+2. **Use of Constants**: Used `BigDecimal.ZERO` instead of `new BigDecimal(0)` for better readability and performance.
+
+3. **Loop Optimization**: Added a `break` statement after finding a matching GTIN13 to avoid unnecessary iterations.
+
+4. **Code Organization**: Grouped related operations together and used descriptive method names to make the code self-documenting.
