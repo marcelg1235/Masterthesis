@@ -1,0 +1,49 @@
+package com.avento.shop.backend.reader;
+
+import com.avento.shop.backend.loader.IReader;
+import com.avento.shop.core.ExceptionUtils;
+import com.avento.shop.core.io.BlockingQueueAdapter;
+import com.avento.shop.core.io.IQueue;
+import org.springframework.core.io.Resource;
+
+public class XMLReader implements IStreamReader {
+
+	private IQueue queue;
+	private Resource file;
+	private IReader reader;
+
+	@Override
+	public String[] nextRecord() {
+		return ExceptionUtils.runSafe(() -> {
+			if (queue == null) {
+				queue = new BlockingQueueAdapter();
+				reader.setInputStream(file.getInputStream());
+				reader.setQueue(queue);
+				final Thread thread = new Thread(reader);
+				thread.setDaemon(true);
+				thread.start();
+			}
+
+			final Object result = reader.getQueue().poll();
+			if (result instanceof Throwable)
+				ExceptionUtils.throwException((Throwable) result);
+
+			return (String[]) result;
+		});
+	}
+
+	public IReader getReader() {
+		return reader;
+	}
+
+	public void setReader(IReader reader) {
+		this.reader = reader;
+	}
+
+	@Override
+	public void setFile(Resource file) {
+		this.file = file;
+		this.queue = null;
+	}
+}
+
