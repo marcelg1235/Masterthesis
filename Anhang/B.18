@@ -1,0 +1,79 @@
+package com.avento.shop.backend.reader;
+
+import com.avento.shop.backend.loader.IReader;
+import com.avento.shop.core.ExceptionUtils;
+import com.avento.shop.core.io.BlockingQueueAdapter;
+import com.avento.shop.core.io.IQueue;
+import org.springframework.core.io.Resource;
+import org.springframework.util.Assert;
+
+import java.io.IOException;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
+
+public class XMLReader implements IStreamReader {
+
+    private IQueue queue;
+    private Resource file;
+    private IReader reader;
+    private Thread readerThread; // Store the thread to manage its lifecycle
+    private static final int POLL_TIMEOUT_MS = 100; // Define a timeout for polling
+
+    public XMLReader(IReader reader) {
+       Assert.notNull(reader, "Reader must not be null");
+       this.reader = reader;
+    }
+
+    @Override
+    public String[] nextRecord() {
+       return ExceptionUtils.runSafe(() -> {
+          // Initialize the queue and start the reader thread if they haven't been already.
+          if (queue == null) {
+             initializeReader();
+          }
+
+          // Poll the queue with a timeout to avoid indefinite blocking.
+          Object result = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+
+          // Handle null result (timeout) or potential errors.
+          if (result == null) {
+             // Consider logging a warning here, or throwing an exception
+             return null; // Or throw a specific exception if a timeout is considered an error
+          }
+
+          if (result instanceof Throwable) {
+             // Rethrow exceptions that occurred in the reader thread.
+             ExceptionUtils.throwException((Throwable) result);
+          }
+
+          return (String[]) result;
+       });
+    }
+
+    private void initializeReader() throws IOException {
+       queue = new BlockingQueueAdapter();
+       reader.setInputStream(file.getInputStream());
+       reader.setQueue(queue);
+
+       // Create and start the reader thread.
+       readerThread = new Thread(reader);
+       readerThread.setDaemon(true);
+       readerThread.start();
+    }
+
+    public IReader getReader() {
+       return reader;
+    }
+
+    //It is not necessary to have a setter for the reader, instead, pass it as a constructor
+    /*public void setReader(IReader reader) {
+        this.reader = reader;
+    }*/
+
+    @Override
+    public void setFile(Resource file) {
+       Assert.notNull(file, "File must not be null");
+       this.file = file;
+       this.queue = null; // Reset queue when a new file is set, forcing re-initialization
+    }
+}
