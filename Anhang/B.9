@@ -1,0 +1,109 @@
+package com.avento.shop.backend.util;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+/**
+ * Utility class for fee calculations.
+ */
+public class FeeUtil implements IFeeUtil {
+
+    // Konstanten für häufig verwendete Werte
+    private static final int DIVISION_SCALE = 5;
+    private static final int RESULT_SCALE = 2;
+    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(RESULT_SCALE, RoundingMode.HALF_UP);
+
+    @Override
+    public Fee calculateShipAndArticleFeePerUnit(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+       validateInputs(priceShip, priceArticle, feeTotal, quantity);
+
+       final Fee resultFees = new Fee();
+       final BigDecimal priceSum = priceShip.add(priceArticle);
+
+       if (priceSum.compareTo(BigDecimal.ZERO) <= 0) {
+          return handleZeroOrNegativeSum(resultFees, priceSum);
+       }
+
+       if (isQuantityTooLarge(quantity)) {
+          resultFees.setShipFee(ZERO);
+          resultFees.setArticleFee(ZERO);
+          return resultFees;
+       }
+
+       return calculateFees(priceShip, priceSum, feeTotal, quantity, resultFees);
+    }
+
+    /**
+     * Validiert die Eingabeparameter.
+     */
+    private void validateInputs(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+       if (priceShip == null || priceArticle == null || feeTotal == null || quantity == null) {
+          throw new IllegalArgumentException("Input parameters cannot be null");
+       }
+
+       if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+          throw new IllegalArgumentException("Quantity must be greater than zero");
+       }
+    }
+
+    /**
+     * Behandelt den Fall, dass die Preissumme null oder negativ ist.
+     */
+    private Fee handleZeroOrNegativeSum(Fee resultFees, BigDecimal priceSum) {
+       if (priceSum.compareTo(BigDecimal.ZERO) < 0) {
+          throw new IllegalArgumentException("PriceSum [" + priceSum + "] is lower than 0!");
+       }
+
+       // Preissumme ist 0, Division durch Null vermeiden
+       resultFees.setShipFee(ZERO);
+       resultFees.setArticleFee(ZERO);
+       return resultFees;
+    }
+
+    /**
+     * Prüft, ob die Menge zu groß ist, was zu Rundungsfehlern führen könnte.
+     */
+    private boolean isQuantityTooLarge(BigDecimal quantity) {
+       return quantity.compareTo(new BigDecimal("10000")) >= 0;
+    }
+
+    /**
+     * Berechnet die Gebühren basierend auf den Eingabeparametern.
+     */
+    private Fee calculateFees(BigDecimal priceShip, BigDecimal priceSum, BigDecimal feeTotal, BigDecimal quantity, Fee resultFees) {
+       try {
+          // Berechnung des Anteils der Versandkosten an der Gesamtsumme
+          final BigDecimal factorToShip = priceShip.divide(priceSum, DIVISION_SCALE, RoundingMode.HALF_UP);
+
+          // Berechnung der Gebühren
+          final BigDecimal shipFee = feeTotal.multiply(factorToShip);
+          final BigDecimal articleFee = feeTotal.subtract(shipFee);
+
+          // Berechnung der Gebühren pro Einheit
+          final BigDecimal shipFeePerItem = safelyDivide(shipFee, quantity);
+          final BigDecimal articleFeePerItem = safelyDivide(articleFee, quantity);
+
+          resultFees.setShipFee(shipFeePerItem);
+          resultFees.setArticleFee(articleFeePerItem);
+
+          return resultFees;
+       } catch (ArithmeticException e) {
+          // Fehlerbehandlung für arithmetische Fehler
+          resultFees.setShipFee(ZERO);
+          resultFees.setArticleFee(ZERO);
+          return resultFees;
+       }
+    }
+
+    /**
+     * Führt eine sichere Division durch und behandelt mögliche Fehler.
+     */
+    private BigDecimal safelyDivide(BigDecimal dividend, BigDecimal divisor) {
+       try {
+          return dividend.divide(divisor, RESULT_SCALE, RoundingMode.HALF_UP);
+       } catch (ArithmeticException e) {
+          // Fallback bei Divisionsfehlern
+          return ZERO;
+       }
+    }
+}
