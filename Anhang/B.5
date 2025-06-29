@@ -1,0 +1,53 @@
+package com.avento.shop.backend.util;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public class FeeUtil implements IFeeUtil {
+
+    private static final int PRICE_SCALE = 5;
+    private static final int FEE_SCALE = 2;
+    private static final RoundingMode ROUNDING_MODE = RoundingMode.HALF_UP;
+
+    @Override
+    public Fee calculateShipAndArticleFeePerUnit(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+
+       if (priceShip == null || priceArticle == null || feeTotal == null || quantity == null) {
+          throw new IllegalArgumentException("Input parameters cannot be null.");
+       }
+
+       if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+          throw new IllegalArgumentException("Quantity must be greater than zero.");
+       }
+
+       if (feeTotal.compareTo(BigDecimal.ZERO) < 0) {
+          throw new IllegalArgumentException("feeTotal must be non-negative.");
+       }
+
+       final Fee resultFees = new Fee();
+       final BigDecimal priceSum = priceShip.add(priceArticle);
+
+       if (priceSum.compareTo(BigDecimal.ZERO) < 0) {
+          throw new IllegalArgumentException("PriceSum [" + priceSum + "] is lower than 0!");
+       }
+       if (priceSum.compareTo(BigDecimal.ZERO) == 0) {
+          //Calculation would result in divide by zero errors, so just set to zero and return.
+          resultFees.setShipFee(BigDecimal.ZERO);
+          resultFees.setArticleFee(BigDecimal.ZERO);
+       } else {
+          //Normal calculation
+          final BigDecimal factorToShip = priceShip.divide(priceSum, PRICE_SCALE, ROUNDING_MODE);
+          final BigDecimal shipFee = feeTotal.multiply(factorToShip);
+          final BigDecimal articleFee = feeTotal.subtract(shipFee);
+
+          resultFees.setShipFee(calculateFeePerItem(shipFee, quantity));
+          resultFees.setArticleFee(calculateFeePerItem(articleFee, quantity));
+       }
+
+       return resultFees;
+    }
+
+    private BigDecimal calculateFeePerItem(BigDecimal fee, BigDecimal quantity) {
+       return fee.divide(quantity, FEE_SCALE, ROUNDING_MODE);
+    }
+}
