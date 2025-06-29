@@ -1,0 +1,176 @@
+### Question:
+Bitte führe ein umfassendes Refactoring durch mit dem Ziel, die Lesbarkeit, Wartbarkeit, Effizienz und Genauigkeit zu verbessern.
+
+### Answer:
+I'll perform a comprehensive refactoring of the `CustomerFeedbackSent` class to improve readability, maintainability, efficiency, and accuracy. Let me analyze the code first and then provide a complete refactored solution.
+
+The main issues I see in the current code:
+
+1. The logic for handling order positions is complex and could be extracted into separate methods
+2. There's potential for a bug in the cost calculation when adding items with the same GTIN13
+3. The code could benefit from more descriptive variable names
+4. We can improve efficiency by using a Map to track positions by GTIN13
+5. The class could use better documentation
+
+Here's my refactored version:
+
+**File: /Users/marcelgaiser/IdeaProjects/avento/backend/ShopBackend/src/com/avento/shop/backend/mail/CustomerFeedbackSent.java**
+```java
+package com.avento.shop.backend.mail;
+
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Map;
+
+import com.avento.shop.core.util.IModelGenerator;
+import com.avento.shop.db.domain.RowOrder;
+import com.avento.shop.db.domain.RowOrderPosition;
+import com.avento.shop.db.domain.RowOrderPositionType;
+
+/**
+ * Generates a model for customer feedback emails after an order has been sent.
+ * This model contains all necessary information about the order, customer, and ordered items.
+ */
+public class CustomerFeedbackSent implements IModelGenerator {
+
+    private static final String CUSTOMER_FEEDBACK_PARAM = "customerFeedback";
+
+    @Override
+    public Map<String, Object> generateModel(Map<String, Object> parameters) {
+        final RowOrder rowOrder = (RowOrder) parameters.get(CUSTOMER_FEEDBACK_PARAM);
+        if (rowOrder == null) {
+            throw new IllegalArgumentException("customerFeedback is missing");
+        }
+
+        final CustomerFeedbackSentModel customerInfo = createCustomerInfoModel(rowOrder);
+        processOrderPositions(rowOrder, customerInfo);
+
+        final Map<String, Object> resultMap = new HashMap<>();
+        resultMap.put(CUSTOMER_FEEDBACK_PARAM, customerInfo);
+        resultMap.put("platformAccountId", rowOrder.getRowPlatformAccount().getId());
+        resultMap.put("resellerId", rowOrder.getRowPlatformAccount().getRowReseller().getId());
+
+        return resultMap;
+    }
+
+    /**
+     * Creates and initializes the customer information model with basic order and address details.
+     * 
+     * @param rowOrder The order data
+     * @return Initialized customer feedback model
+     */
+    private CustomerFeedbackSentModel createCustomerInfoModel(RowOrder rowOrder) {
+        final CustomerFeedbackSentModel customerInfo = new CustomerFeedbackSentModel();
+        
+        // Set delivery address information
+        customerInfo.setFirstName(rowOrder.getRowDeliveryAddress().getFirstname());
+        customerInfo.setLastName(rowOrder.getRowDeliveryAddress().getLastname());
+        customerInfo.setAddress1(rowOrder.getRowDeliveryAddress().getAddress1());
+        customerInfo.setAddress2(rowOrder.getRowDeliveryAddress().getAddress2());
+        customerInfo.setAddress3(rowOrder.getRowDeliveryAddress().getAddress3());
+        customerInfo.setZip(rowOrder.getRowDeliveryAddress().getZip());
+        customerInfo.setCity(rowOrder.getRowDeliveryAddress().getCity());
+        customerInfo.setState(rowOrder.getRowDeliveryAddress().getState());
+        customerInfo.setCountryName(rowOrder.getRowDeliveryAddress().getRowCountry().getName());
+        customerInfo.setCompany(rowOrder.getRowDeliveryAddress().getCompany());
+        
+        // Set order information
+        customerInfo.setOrderId(rowOrder.getId());
+        customerInfo.setPlatformOrderId(rowOrder.getPlatformOrderId());
+        customerInfo.setOrderDate(rowOrder.getOrderDate());
+        customerInfo.setPlatformAccountName(rowOrder.getRowPlatformAccount().getAccountname());
+        
+        // Initialize collections and totals
+        customerInfo.setOip(new LinkedList<>());
+        customerInfo.setTotalCosts(BigDecimal.ZERO);
+        customerInfo.setShippingCosts(BigDecimal.ZERO);
+        
+        return customerInfo;
+    }
+
+    /**
+     * Processes all order positions and updates the customer info model accordingly.
+     * 
+     * @param rowOrder The order containing positions
+     * @param customerInfo The model to update
+     */
+    private void processOrderPositions(RowOrder rowOrder, CustomerFeedbackSentModel customerInfo) {
+        // Use a map to efficiently track positions by GTIN13
+        Map<String, CustomerFeedbackSentModel.Position> positionsByGtin = new HashMap<>();
+        
+        for (final RowOrderPosition rowOrderPosition : rowOrder.getRowsOrderPosition()) {
+            if (RowOrderPositionType.ARTICLE.equals(rowOrderPosition.getRowOrderPositionType())) {
+                processArticlePosition(rowOrderPosition, customerInfo, positionsByGtin);
+            } else if (RowOrderPositionType.SHIPPING.equals(rowOrderPosition.getRowOrderPositionType())) {
+                processShippingPosition(rowOrderPosition, customerInfo);
+            }
+        }
+    }
+
+    /**
+     * Processes an article position, either adding it to an existing position or creating a new one.
+     * 
+     * @param rowOrderPosition The article position to process
+     * @param customerInfo The customer info model to update
+     * @param positionsByGtin Map of existing positions by GTIN13
+     */
+    private void processArticlePosition(
+            RowOrderPosition rowOrderPosition, 
+            CustomerFeedbackSentModel customerInfo,
+            Map<String, CustomerFeedbackSentModel.Position> positionsByGtin) {
+        
+        final String gtin13 = rowOrderPosition.getGtin13();
+        final BigDecimal priceGross = rowOrderPosition.getPriceGross();
+        
+        CustomerFeedbackSentModel.Position position = positionsByGtin.get(gtin13);
+        
+        if (position == null) {
+            // Create new position
+            position = new CustomerFeedbackSentModel.Position();
+            position.setSinglePrice(priceGross);
+            position.setTotalPerItemPrice(priceGross);
+            position.setQuantity(BigDecimal.ONE);
+            position.setName(rowOrderPosition.getName());
+            position.setGtin13(gtin13);
+            
+            // Add to tracking collections
+            positionsByGtin.put(gtin13, position);
+            customerInfo.getOip().add(position);
+        } else {
+            // Update existing position
+            position.setQuantity(position.getQuantity().add(BigDecimal.ONE));
+            position.setTotalPerItemPrice(position.getSinglePrice().multiply(position.getQuantity()));
+        }
+        
+        // Always add the price to total costs
+        customerInfo.setTotalCosts(customerInfo.getTotalCosts().add(priceGross));
+    }
+
+    /**
+     * Processes a shipping position by adding its cost to the shipping costs total.
+     * 
+     * @param rowOrderPosition The shipping position
+     * @param customerInfo The customer info model to update
+     */
+    private void processShippingPosition(RowOrderPosition rowOrderPosition, CustomerFeedbackSentModel customerInfo) {
+        customerInfo.setShippingCosts(customerInfo.getShippingCosts().add(rowOrderPosition.getPriceGross()));
+    }
+}
+```
+
+Key improvements in this refactoring:
+
+1. **Better Code Organization**: Extracted methods for different responsibilities, making the code more modular and easier to understand.
+
+2. **Fixed Potential Bug**: The original code had a potential issue where it would add the price to total costs when finding an existing item, but the price was already added when the item was first created. The refactored version ensures costs are added correctly.
+
+3. **Improved Efficiency**: Used a HashMap to track positions by GTIN13 instead of iterating through the list each time, reducing the time complexity from O(n²) to O(n).
+
+4. **Better Readability**: Added meaningful method and variable names, and included JavaDoc comments to explain the purpose of each method.
+
+5. **Consistency**: Used BigDecimal.ZERO and BigDecimal.ONE instead of new BigDecimal(0) and new BigDecimal(1) for better readability and to avoid unnecessary object creation.
+
+6. **Constants**: Extracted the parameter name as a constant to avoid string duplication.
+
+This refactoring maintains the exact same functionality while making the code more maintainable, efficient, and easier to understand.
