@@ -1,0 +1,137 @@
+package com.avento.shop.backend.reader;
+
+import com.avento.shop.backend.loader.IReader;
+import com.avento.shop.core.ExceptionUtils;
+import com.avento.shop.core.io.BlockingQueueAdapter;
+import com.avento.shop.core.io.IQueue;
+import com.avento.shop.core.log.ILogger;
+import com.avento.shop.core.log.LogAdapter;
+import org.springframework.core.io.Resource;
+
+import java.io.IOException;
+
+/**
+ * XMLReader provides functionality to read XML files as records.
+ * It uses an underlying reader implementation to parse the XML content.
+ */
+public class XMLReader implements IStreamReader, AutoCloseable {
+
+    private static final ILogger LOGGER = LogAdapter.getLogger(XMLReader.class);
+
+    private IQueue queue;
+    private Resource file;
+    private IReader reader;
+    private Thread readerThread;
+    private boolean initialized = false;
+
+    /**
+     * Reads the next record from the XML file.
+     * Initializes the reader if it hasn't been initialized yet.
+     *
+     * @return The next record as a String array, or null if no more records are available
+     */
+    @Override
+    public String[] nextRecord() {
+       return ExceptionUtils.runSafe(() -> {
+          initializeReaderIfNeeded();
+
+          final Object result = queue.poll();
+
+          if (result == null) {
+             return null;
+          }
+
+          if (result instanceof Throwable) {
+             LOGGER.error("Error reading XML record", (Throwable) result);
+             ExceptionUtils.throwException((Throwable) result);
+          }
+
+          return (String[]) result;
+       });
+    }
+
+    /**
+     * Initializes the reader and starts the reader thread if not already done.
+     *
+     * @throws IOException if there's an error opening the input stream
+     * @throws IllegalStateException if the reader or file is not set
+     */
+    private void initializeReaderIfNeeded() throws IOException {
+       if (initialized) {
+          return;
+       }
+
+       if (reader == null) {
+          throw new IllegalStateException("Reader has not been set");
+       }
+
+       if (file == null) {
+          throw new IllegalStateException("File has not been set");
+       }
+
+       queue = new BlockingQueueAdapter();
+       reader.setInputStream(file.getInputStream());
+       reader.setQueue(queue);
+
+       readerThread = new Thread(reader, "XMLReader-Thread");
+       readerThread.setDaemon(true);
+       readerThread.start();
+
+       initialized = true;
+    }
+
+    /**
+     * Gets the underlying reader implementation.
+     *
+     * @return The reader implementation
+     */
+    public IReader getReader() {
+       return reader;
+    }
+
+    /**
+     * Sets the reader implementation to use for parsing XML.
+     *
+     * @param reader The reader implementation
+     */
+    public void setReader(IReader reader) {
+       this.reader = reader;
+       this.initialized = false;
+    }
+
+    /**
+     * Sets the XML file to read.
+     * Resets the reader state so it will be reinitialized on the next read.
+     *
+     * @param file The XML file resource
+     */
+    @Override
+    public void setFile(Resource file) {
+       this.file = file;
+       this.queue = null;
+       this.initialized = false;
+    }
+
+    /**
+     * Closes resources used by this reader.
+     * This should be called when the reader is no longer needed.
+     */
+    @Override
+    public void close() {
+       if (reader instanceof AutoCloseable) {
+          try {
+             ((AutoCloseable) reader).close();
+          } catch (Exception e) {
+             LOGGER.error("Error closing reader", e);
+          }
+       }
+
+       // Interrupt the reader thread if it's still running
+       if (readerThread != null && readerThread.isAlive()) {
+          readerThread.interrupt();
+       }
+
+       queue = null;
+       initialized = false;
+    }
+}
