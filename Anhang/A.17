@@ -1,0 +1,74 @@
+### Question:
+Bitte führe ein umfassendes Refactoring durch mit dem Ziel, die Lesbarkeit, Wartbarkeit, Effizienz und Genauigkeit zu verbessern.
+
+### Answer:
+Okay, here's a refactored version of the `FeeUtil` class, focusing on improving readability, maintainability, efficiency, and accuracy. I'll provide explanations for the changes made.
+
+**File: /Users/marcelgaiser/IdeaProjects/avento/backend/ShopBackend/src/com/avento/shop/backend/util/FeeUtil.java**
+```java
+package com.avento.shop.backend.util;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public class FeeUtil implements IFeeUtil {
+
+    private static final int SCALE = 5;
+    private static final RoundingMode ROUNDING_MODE = RoundingMode.HALF_UP;
+
+    @Override
+    public Fee calculateShipAndArticleFeePerUnit(BigDecimal priceShip, BigDecimal priceArticle, BigDecimal feeTotal, BigDecimal quantity) {
+        // Validate inputs
+        if (priceShip == null || priceArticle == null || feeTotal == null || quantity == null) {
+            throw new IllegalArgumentException("Input values cannot be null.");
+        }
+
+        if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero.");
+        }
+
+        final Fee resultFees = new Fee();
+        final BigDecimal priceSum = priceShip.add(priceArticle);
+
+        if (priceSum.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("PriceSum [" + priceSum + "] cannot be negative!");
+        }
+
+        if (priceSum.compareTo(BigDecimal.ZERO) == 0) {
+            // If priceSum is zero, both fees are zero. Avoid division by zero.
+            resultFees.setShipFee(BigDecimal.ZERO);
+            resultFees.setArticleFee(BigDecimal.ZERO);
+        } else {
+            // Calculate the factor for ship fee
+            BigDecimal factorToShip = priceShip.divide(priceSum, SCALE, ROUNDING_MODE);
+
+            // Calculate ship fee and article fee
+            BigDecimal shipFee = feeTotal.multiply(factorToShip);
+            BigDecimal articleFee = feeTotal.subtract(shipFee);
+
+            // Calculate per-item fees with a scale of 2 for currency precision
+            BigDecimal shipFeePerItem = shipFee.divide(quantity, 2, ROUNDING_MODE);
+            BigDecimal articleFeePerItem = articleFee.divide(quantity, 2, ROUNDING_MODE);
+
+            resultFees.setShipFee(shipFeePerItem);
+            resultFees.setArticleFee(articleFeePerItem);
+        }
+
+        return resultFees;
+    }
+}
+```
+
+Key improvements and explanations:
+
+*   **Null Checks:** Added null checks for all input parameters. This prevents `NullPointerException` and makes the method more robust.  An `IllegalArgumentException` is thrown to indicate that the input is invalid.
+*   **Quantity Check:** Added a check to ensure that the quantity is greater than zero.  A quantity of zero or less doesn't make sense in this context and could lead to unexpected results or errors. An `IllegalArgumentException` is thrown to indicate that the input is invalid.
+*   **IllegalArgumentException:** Changed `RuntimeException` to `IllegalArgumentException` for invalid input parameters. This provides more specific information about the cause of the exception.
+*   **Constants for Scale and Rounding Mode:** Introduced constants `SCALE` and `ROUNDING_MODE` to avoid magic numbers and improve readability and maintainability.  If the rounding mode or scale needs to be changed, it can be done in one place.
+*   **Comments:** Added comments to clarify the purpose of each section of the code.
+*   **Clearer Variable Names:** The variable names are already pretty good, but I've ensured they are as descriptive as possible.
+*   **Conciseness:**  The code is written in a concise manner, avoiding unnecessary verbosity.
+*   **Division by Zero Handling:** The original code already handled the `priceSum == 0` case, but I've added a comment to explicitly state that this is to prevent division by zero.
+*   **Input Validation:** Added validation to ensure that the input values are valid before performing any calculations. This can help prevent unexpected results or errors.
+
+This refactored version addresses the points raised and provides a more robust, readable, and maintainable solution.
