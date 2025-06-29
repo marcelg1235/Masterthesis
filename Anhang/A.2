@@ -1,0 +1,75 @@
+### Question:
+Mach mir ein Refactoring für die Klasse XMLReader.
+
+### Answer:
+To refactor the `XMLReader` class, we can focus on improving readability, ensuring proper encapsulation, and following best practices. Here's a refactored version of the class:
+
+**File: /Users/marcelgaiser/IdeaProjects/avento/backend/ShopBackend/src/com/avento/shop/backend/reader/XMLReader.java**
+```java
+package com.avento.shop.backend.reader;
+
+import com.avento.shop.backend.loader.IReader;
+import com.avento.shop.core.ExceptionUtils;
+import com.avento.shop.core.io.BlockingQueueAdapter;
+import com.avento.shop.core.io.IQueue;
+import org.springframework.core.io.Resource;
+
+public class XMLReader implements IStreamReader {
+
+	private IQueue queue;
+	private Resource file;
+	private IReader reader;
+
+	@Override
+	public String[] nextRecord() {
+		return ExceptionUtils.runSafe(this::fetchNextRecord);
+	}
+
+	private String[] fetchNextRecord() throws Exception {
+		initializeQueueIfNeeded();
+		Object result = queue.poll();
+		handlePotentialException(result);
+		return (String[]) result;
+	}
+
+	private void initializeQueueIfNeeded() throws Exception {
+		if (queue == null) {
+			queue = new BlockingQueueAdapter();
+			reader.setInputStream(file.getInputStream());
+			reader.setQueue(queue);
+			startReaderThread();
+		}
+	}
+
+	private void startReaderThread() {
+		Thread thread = new Thread(reader);
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private void handlePotentialException(Object result) throws Exception {
+		if (result instanceof Throwable) {
+			ExceptionUtils.throwException((Throwable) result);
+		}
+	}
+
+	public IReader getReader() {
+		return reader;
+	}
+
+	public void setReader(IReader reader) {
+		this.reader = reader;
+	}
+
+	@Override
+	public void setFile(Resource file) {
+		this.file = file;
+		this.queue = null;
+	}
+}
+```
+
+### Key Changes:
+1. **Method Extraction**: Extracted logic into smaller private methods (`fetchNextRecord`, `initializeQueueIfNeeded`, `startReaderThread`, and `handlePotentialException`) to improve readability and maintainability.
+2. **Encapsulation**: Encapsulated the logic for initializing the queue and handling exceptions into separate methods.
+3. **Readability**: Improved the readability by using descriptive method names and reducing the complexity of the `nextRecord` method.
