@@ -1,0 +1,101 @@
+### Question:
+Bitte führe ein umfassendes Refactoring durch mit dem Ziel, die Lesbarkeit, Wartbarkeit, Effizienz und Genauigkeit zu verbessern.
+
+### Answer:
+To refactor the `XMLReader` class for improved readability, maintainability, efficiency, and accuracy, we can make several changes. These include improving method names, extracting logic into smaller methods, and ensuring proper exception handling. Here's a refactored version of the class:
+
+**File: /Users/marcelgaiser/IdeaProjects/avento/backend/ShopBackend/src/com/avento/shop/backend/reader/XMLReader.java**
+```java
+package com.avento.shop.backend.reader;
+
+import com.avento.shop.backend.loader.IReader;
+import com.avento.shop.core.ExceptionUtils;
+import com.avento.shop.core.io.BlockingQueueAdapter;
+import com.avento.shop.core.io.IQueue;
+import org.springframework.core.io.Resource;
+
+public class XMLReader implements IStreamReader {
+
+	private IQueue queue;
+	private Resource file;
+	private IReader reader;
+
+	@Override
+	public String[] nextRecord() {
+		return ExceptionUtils.runSafe(this::fetchNextRecord);
+	}
+
+	private String[] fetchNextRecord() {
+		initializeQueueIfNecessary();
+		Object result = pollQueue();
+		handlePotentialException(result);
+		return castResultToStringArray(result);
+	}
+
+	private void initializeQueueIfNecessary() {
+		if (queue == null) {
+			queue = new BlockingQueueAdapter();
+			initializeReader();
+			startReaderThread();
+		}
+	}
+
+	private void initializeReader() {
+		try {
+			reader.setInputStream(file.getInputStream());
+			reader.setQueue(queue);
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to initialize reader", e);
+		}
+	}
+
+	private void startReaderThread() {
+		Thread thread = new Thread(reader);
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private Object pollQueue() {
+		return reader.getQueue().poll();
+	}
+
+	private void handlePotentialException(Object result) {
+		if (result instanceof Throwable) {
+			ExceptionUtils.throwException((Throwable) result);
+		}
+	}
+
+	private String[] castResultToStringArray(Object result) {
+		if (result instanceof String[]) {
+			return (String[]) result;
+		} else {
+			throw new IllegalStateException("Unexpected result type: " + result.getClass());
+		}
+	}
+
+	public IReader getReader() {
+		return reader;
+	}
+
+	public void setReader(IReader reader) {
+		this.reader = reader;
+	}
+
+	@Override
+	public void setFile(Resource file) {
+		this.file = file;
+		this.queue = null;
+	}
+}
+```
+
+### Key Changes:
+1. **Method Extraction**: The `nextRecord` method is now more concise, with logic extracted into helper methods like `initializeQueueIfNecessary`, `initializeReader`, `startReaderThread`, `pollQueue`, `handlePotentialException`, and `castResultToStringArray`.
+
+2. **Exception Handling**: Added a try-catch block in `initializeReader` to handle potential `IOException` when setting the input stream.
+
+3. **Type Safety**: Added a check in `castResultToStringArray` to ensure the result is of the expected type, throwing an `IllegalStateException` if not.
+
+4. **Descriptive Method Names**: Methods are named to clearly describe their purpose, improving readability.
+
+This refactoring enhances the clarity and robustness of the `XMLReader` class, making it easier to understand and maintain.
