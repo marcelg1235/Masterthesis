@@ -1,0 +1,74 @@
+package com.avento.shop.backend.mail;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.avento.shop.core.log.ILogger;
+import com.avento.shop.core.log.LogAdapter;
+import com.avento.shop.core.util.IModelGenerator;
+import com.avento.shop.db.domain.RowOrder;
+import com.avento.shop.db.domain.RowOrderPosition;
+import com.avento.shop.db.domain.RowTradeItem;
+
+public class OrderSent implements IModelGenerator {
+
+    protected static final ILogger logger = new LogAdapter(OrderSent.class);
+
+    @Override
+    public Map<String, Object> generateModel(Map<String, Object> parameters) {
+       final RowOrder order = (RowOrder) parameters.get("order");
+       @SuppressWarnings("unchecked")
+       final List<RowTradeItem> tradeItems = (List<RowTradeItem>) parameters.get("tradeItems");
+
+       validateParameters(order, tradeItems);
+
+       final Map<String, Object> modelMap = new HashMap<>();
+       final List<PositionSentModel> positions = new ArrayList<>(tradeItems.size());
+
+       PositionSentModel orderModel = createOrderModel(tradeItems, positions);
+
+       populateModelMap(modelMap, order, orderModel, positions);
+
+       return modelMap;
+    }
+
+    private void validateParameters(RowOrder order, List<RowTradeItem> tradeItems) {
+       if (order == null || tradeItems == null) {
+          throw new IllegalArgumentException("Parameters are missing.");
+       }
+    }
+
+    private PositionSentModel createOrderModel(List<RowTradeItem> tradeItems, List<PositionSentModel> positions) {
+       PositionSentModel orderModel = null;
+       for (final RowTradeItem tradeItem : tradeItems) {
+          final RowOrderPosition rowOrderPosition = tradeItem.getRowOrderPosition();
+
+          if (orderModel == null) {
+             orderModel = new PositionSentModel();
+             orderModel.fill(rowOrderPosition);
+          }
+
+          PositionSentModel orderPosition = createOrderPosition(rowOrderPosition);
+          positions.add(orderPosition);
+       }
+       return orderModel;
+    }
+
+    private PositionSentModel createOrderPosition(RowOrderPosition rowOrderPosition) {
+       PositionSentModel orderPosition = new PositionSentModel();
+       orderPosition.setQuantity(1);
+       orderPosition.setGtin13(rowOrderPosition.getGtin13());
+       orderPosition.setSinglePrice(rowOrderPosition.getPriceGross());
+       orderPosition.setName(rowOrderPosition.getName());
+       return orderPosition;
+    }
+
+    private void populateModelMap(Map<String, Object> modelMap, RowOrder order, PositionSentModel orderModel, List<PositionSentModel> positions) {
+       modelMap.put("order", orderModel);
+       modelMap.put("positions", positions);
+       modelMap.put("platformAccountId", order.getRowPlatformAccount().getId());
+       modelMap.put("resellerId", order.getRowPlatformAccount().getRowReseller().getId());
+    }
+}
